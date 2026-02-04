@@ -9,49 +9,13 @@ import {
   FileCheck, 
   ArrowLeft,
   Loader2,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Copy,
-  Clock,
-  RefreshCw
+  RefreshCw,
+  User,
+  MapPin,
+  XCircle
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useOCRScanner } from '@/hooks/useOCRScanner';
-import { STATUS_LABELS, type ValidationStatus } from '@/types/petition';
-
-const StatusBadge = ({ status }: { status: ValidationStatus }) => {
-  const colors: Record<ValidationStatus, string> = {
-    G: 'bg-status-valid text-white',
-    B: 'bg-status-invalid text-white',
-    X: 'bg-status-manual text-white',
-    D: 'bg-status-duplicate text-white',
-    P: 'bg-status-pending text-white',
-  };
-
-  return (
-    <Badge className={`${colors[status]} font-bold`}>
-      {status} - {STATUS_LABELS[status]}
-    </Badge>
-  );
-};
-
-const StatusIcon = ({ status }: { status: ValidationStatus }) => {
-  switch (status) {
-    case 'G':
-      return <CheckCircle2 className="w-5 h-5 text-status-valid" />;
-    case 'B':
-      return <XCircle className="w-5 h-5 text-status-invalid" />;
-    case 'X':
-      return <AlertTriangle className="w-5 h-5 text-status-manual" />;
-    case 'D':
-      return <Copy className="w-5 h-5 text-status-duplicate" />;
-    case 'P':
-      return <Clock className="w-5 h-5 text-status-pending" />;
-    default:
-      return null;
-  }
-};
 
 const CirculatorDashboard = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,18 +28,12 @@ const CirculatorDashboard = () => {
   
   const { 
     isScanning, 
-    scannedSignatures, 
+    scannedSignatures,
+    rawText,
     error, 
     scanDocument, 
     clearResults 
   } = useOCRScanner();
-
-  // Calculate validation stats
-  const validCount = scannedSignatures.filter(s => s.validationResult?.status === 'G').length;
-  const invalidCount = scannedSignatures.filter(s => s.validationResult?.status === 'B').length;
-  const manualCount = scannedSignatures.filter(s => s.validationResult?.status === 'X').length;
-  const duplicateCount = scannedSignatures.filter(s => s.validationResult?.status === 'D').length;
-  const pendingCount = scannedSignatures.filter(s => !s.validationResult || s.isValidating).length;
 
   const startCamera = useCallback(async () => {
     try {
@@ -268,38 +226,20 @@ const CirculatorDashboard = () => {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Validation Results</CardTitle>
+                  <CardTitle>Detected Signatures</CardTitle>
                   <Button variant="outline" size="sm" onClick={resetScan} className="gap-2">
                     <RefreshCw className="w-4 h-4" />
                     New Scan
                   </Button>
                 </div>
                 <CardDescription>
-                  {scannedSignatures.length} signatures processed
+                  {scannedSignatures.length} signature(s) detected by Gemini OCR
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-5 gap-2 text-center">
-                  <div className="p-2 rounded-lg bg-status-valid/10">
-                    <div className="text-2xl font-bold text-status-valid">{validCount}</div>
-                    <div className="text-xs text-muted-foreground">Valid</div>
-                  </div>
-                  <div className="p-2 rounded-lg bg-status-invalid/10">
-                    <div className="text-2xl font-bold text-status-invalid">{invalidCount}</div>
-                    <div className="text-xs text-muted-foreground">Invalid</div>
-                  </div>
-                  <div className="p-2 rounded-lg bg-status-manual/10">
-                    <div className="text-2xl font-bold text-status-manual">{manualCount}</div>
-                    <div className="text-xs text-muted-foreground">Manual</div>
-                  </div>
-                  <div className="p-2 rounded-lg bg-status-duplicate/10">
-                    <div className="text-2xl font-bold text-status-duplicate">{duplicateCount}</div>
-                    <div className="text-xs text-muted-foreground">Duplicate</div>
-                  </div>
-                  <div className="p-2 rounded-lg bg-status-pending/10">
-                    <div className="text-2xl font-bold text-status-pending">{pendingCount}</div>
-                    <div className="text-xs text-muted-foreground">Pending</div>
-                  </div>
+                <div className="p-3 rounded-lg bg-accent/10 text-center">
+                  <div className="text-3xl font-bold text-accent">{scannedSignatures.length}</div>
+                  <div className="text-sm text-muted-foreground">Names Detected</div>
                 </div>
               </CardContent>
             </Card>
@@ -320,56 +260,48 @@ const CirculatorDashboard = () => {
               </Card>
             )}
 
-            {/* Individual Results */}
+            {/* Raw Text Output */}
+            {rawText && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Raw Detected Text</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <pre className="text-sm bg-muted p-3 rounded-lg whitespace-pre-wrap overflow-x-auto">
+                    {rawText}
+                  </pre>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Individual Signature Details */}
             <div className="space-y-3">
               <h3 className="font-semibold text-lg">Signature Details</h3>
               {scannedSignatures.map((sig, index) => (
-                <Card key={index} className={`
-                  ${sig.validationResult?.status === 'G' ? 'border-status-valid/50' : ''}
-                  ${sig.validationResult?.status === 'B' ? 'border-status-invalid/50' : ''}
-                  ${sig.validationResult?.status === 'X' ? 'border-status-manual/50' : ''}
-                  ${sig.validationResult?.status === 'D' ? 'border-status-duplicate/50' : ''}
-                `}>
+                <Card key={index} className="border-accent/30">
                   <CardContent className="py-4">
                     <div className="flex items-start gap-3">
-                      <div className="mt-1">
-                        {sig.isValidating ? (
-                          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-                        ) : sig.validationResult ? (
-                          <StatusIcon status={sig.validationResult.status} />
-                        ) : (
-                          <Clock className="w-5 h-5 text-status-pending" />
-                        )}
+                      <div className="mt-1 p-2 rounded-full bg-accent/10">
+                        <User className="w-5 h-5 text-accent" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium">{sig.name}</span>
-                          {sig.validationResult && (
-                            <StatusBadge status={sig.validationResult.status} />
-                          )}
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="font-semibold text-lg">{sig.name}</span>
+                          <Badge variant="outline" className="text-xs">
+                            #{index + 1}
+                          </Badge>
                         </div>
-                        <p className="text-sm text-muted-foreground">
-                          {sig.address}, {sig.city}, {sig.zip}
-                        </p>
-                        {sig.validationResult?.message && (
-                          <p className="text-sm mt-1">
-                            {sig.validationResult.message}
-                          </p>
-                        )}
-                        {sig.validationResult?.suggestions && sig.validationResult.suggestions.length > 0 && (
-                          <div className="mt-2 text-sm text-accent">
-                            {sig.validationResult.suggestions.map((s, i) => (
-                              <p key={i}>💡 {s}</p>
-                            ))}
+                        <div className="flex items-start gap-2 text-sm text-muted-foreground">
+                          <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
+                          <div>
+                            <p>{sig.address}</p>
+                            <p>{sig.city}, {sig.zip}</p>
                           </div>
-                        )}
-                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                          <span>OCR Confidence: {Math.round(sig.confidence * 100)}%</span>
-                          {sig.validationResult && (
-                            <span>
-                              Match Score: {Math.round(sig.validationResult.confidenceScore * 100)}%
-                            </span>
-                          )}
+                        </div>
+                        <div className="mt-3 text-xs text-muted-foreground">
+                          <Badge variant="secondary" className="text-xs">
+                            OCR Confidence: {Math.round(sig.confidence * 100)}%
+                          </Badge>
                         </div>
                       </div>
                     </div>
@@ -378,10 +310,12 @@ const CirculatorDashboard = () => {
               ))}
             </div>
 
-            {/* Submit Button */}
-            <Button className="w-full" size="lg" disabled={pendingCount > 0}>
-              Submit for Review
-            </Button>
+            {/* Placeholder for future validation */}
+            <Card className="border-dashed border-2 bg-muted/30">
+              <CardContent className="py-6 text-center text-muted-foreground">
+                <p className="text-sm">🔒 Identity validation will be enabled later</p>
+              </CardContent>
+            </Card>
           </div>
         )}
 
