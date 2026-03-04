@@ -51,8 +51,10 @@ const CirculatorDashboard = () => {
       console.error('Camera access error:', err);
       if (err instanceof Error && err.name === 'NotAllowedError') {
         alert('Camera access denied. Please check browser permissions.');
+      } else if (err instanceof Error && err.name === 'NotFoundError') {
+        alert('No camera found on this device. Please use a device with a camera (phone or laptop with webcam).');
       } else {
-        alert('Could not start camera. Please try again.');
+        alert('Could not start camera. Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
       }
     }
   }, []);
