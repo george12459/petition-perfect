@@ -37,22 +37,53 @@ const CirculatorDashboard = () => {
   // CRITICAL: getUserMedia called directly in click handler for browser permission
   const handleStartCamera = useCallback(async () => {
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false,
-      });
-      streamRef.current = mediaStream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        await videoRef.current.play();
+      if (!navigator.mediaDevices?.getUserMedia) {
+        alert('Camera is not supported in this browser.');
+        return;
       }
+
+      const streamOptions: MediaStreamConstraints[] = [
+        {
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+          audio: false,
+        },
+        { video: true, audio: false },
+      ];
+
+      let mediaStream: MediaStream | null = null;
+      let lastError: unknown = null;
+
+      for (const options of streamOptions) {
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia(options);
+          break;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+
+      if (!mediaStream) {
+        throw lastError instanceof Error ? lastError : new Error('Could not start camera stream.');
+      }
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+
+      streamRef.current = mediaStream;
       setIsCameraActive(true);
     } catch (err) {
       console.error('Camera access error:', err);
       if (err instanceof Error && err.name === 'NotAllowedError') {
         alert('Camera access denied. Please check browser permissions.');
+      } else if (err instanceof Error && err.name === 'NotReadableError') {
+        alert('Camera is in use by another app or browser tab. Please close other camera apps and retry.');
       } else if (err instanceof Error && err.name === 'NotFoundError') {
-        alert('No camera found on this device. Please use a device with a camera (phone or laptop with webcam).');
+        alert('No usable camera was found. Please reconnect your camera (or disable virtual camera tools) and try again.');
       } else {
         alert('Could not start camera. Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
       }
