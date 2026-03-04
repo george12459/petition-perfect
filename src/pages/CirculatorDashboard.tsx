@@ -34,15 +34,49 @@ const CirculatorDashboard = () => {
     clearResults 
   } = useOCRScanner();
 
+  const getUserMediaCompat = useCallback((constraints: MediaStreamConstraints) => {
+    if (navigator.mediaDevices?.getUserMedia) {
+      return navigator.mediaDevices.getUserMedia(constraints);
+    }
+
+    const legacyGetUserMedia =
+      (navigator as any).getUserMedia ||
+      (navigator as any).webkitGetUserMedia ||
+      (navigator as any).mozGetUserMedia ||
+      (navigator as any).msGetUserMedia;
+
+    if (!legacyGetUserMedia) {
+      return Promise.reject(new Error('Camera is not supported in this browser.'));
+    }
+
+    return new Promise<MediaStream>((resolve, reject) => {
+      legacyGetUserMedia.call(navigator, constraints, resolve, reject);
+    });
+  }, []);
+
+  const playStreamInVideo = useCallback(async (stream: MediaStream) => {
+    const videoElement = videoRef.current;
+    if (!videoElement) return;
+
+    videoElement.srcObject = stream;
+    videoElement.onloadedmetadata = () => {
+      videoElement.play().catch((playError) => {
+        console.error('Video preview error:', playError);
+      });
+    };
+
+    try {
+      await videoElement.play();
+    } catch (playError) {
+      console.error('Video preview error:', playError);
+    }
+  }, []);
+
   // CRITICAL: getUserMedia called directly in click handler for browser permission
   const handleStartCamera = useCallback(async () => {
     try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        alert('Camera is not supported in this browser.');
-        return;
-      }
-
       const streamOptions: MediaStreamConstraints[] = [
+        { video: true, audio: false },
         {
           video: {
             facingMode: { ideal: 'environment' },
@@ -51,7 +85,7 @@ const CirculatorDashboard = () => {
           },
           audio: false,
         },
-        { video: true, audio: false },
+        { video: { facingMode: { ideal: 'user' } }, audio: false },
       ];
 
       let mediaStream: MediaStream | null = null;
@@ -59,10 +93,27 @@ const CirculatorDashboard = () => {
 
       for (const options of streamOptions) {
         try {
-          mediaStream = await navigator.mediaDevices.getUserMedia(options);
+          mediaStream = await getUserMediaCompat(options);
           break;
         } catch (err) {
           lastError = err;
+        }
+      }
+
+      if (!mediaStream && navigator.mediaDevices?.enumerateDevices) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter((device) => device.kind === 'videoinput');
+
+        for (const device of videoDevices) {
+          try {
+            mediaStream = await getUserMediaCompat({
+              video: { deviceId: { exact: device.deviceId } },
+              audio: false,
+            });
+            break;
+          } catch (err) {
+            lastError = err;
+          }
         }
       }
 
@@ -76,19 +127,21 @@ const CirculatorDashboard = () => {
 
       streamRef.current = mediaStream;
       setIsCameraActive(true);
+
+      requestAnimationFrame(() => {
+        void playStreamInVideo(mediaStream as MediaStream);
+      });
     } catch (err) {
       console.error('Camera access error:', err);
       if (err instanceof Error && err.name === 'NotAllowedError') {
         alert('Camera access denied. Please check browser permissions.');
       } else if (err instanceof Error && err.name === 'NotReadableError') {
         alert('Camera is in use by another app or browser tab. Please close other camera apps and retry.');
-      } else if (err instanceof Error && err.name === 'NotFoundError') {
-        alert('No usable camera was found. Please reconnect your camera (or disable virtual camera tools) and try again.');
       } else {
-        alert('Could not start camera. Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+        alert('Could not start camera. Please try again.');
       }
     }
-  }, []);
+  }, [getUserMediaCompat, playStreamInVideo]);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -96,20 +149,16 @@ const CirculatorDashboard = () => {
       streamRef.current = null;
     }
     if (videoRef.current) {
+      videoRef.current.onloadedmetadata = null;
       videoRef.current.srcObject = null;
     }
     setIsCameraActive(false);
   }, []);
 
   useEffect(() => {
-    if (!isCameraActive || !videoRef.current || !streamRef.current) return;
-
-    const videoElement = videoRef.current;
-    videoElement.srcObject = streamRef.current;
-    videoElement.play().catch((playError) => {
-      console.error('Video preview error:', playError);
-    });
-  }, [isCameraActive]);
+    if (!isCameraActive || !streamRef.current) return;
+    void playStreamInVideo(streamRef.current);
+  }, [isCameraActive, playStreamInVideo]);
 
   useEffect(() => {
     return () => {
