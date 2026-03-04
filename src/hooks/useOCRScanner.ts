@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { extractSignaturesFromImage, type DetectedSignature } from '@/lib/gemini';
+import { extractSignaturesFromImage, type DetectedSignature } from '@/lib/ocr';
 
 interface ScannedSignature extends DetectedSignature {
   isValidating: boolean;
@@ -7,23 +7,26 @@ interface ScannedSignature extends DetectedSignature {
 
 export function useOCRScanner() {
   const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
   const [scannedSignatures, setScannedSignatures] = useState<ScannedSignature[]>([]);
   const [rawText, setRawText] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
 
-  // Main scan function using Gemini API
   const scanDocument = useCallback(async (imageData: string) => {
     setIsScanning(true);
     setError(null);
     setScannedSignatures([]);
     setRawText('');
+    setScanProgress(10);
 
     try {
-      console.log('Starting Gemini OCR...');
+      console.log('Starting local Tesseract OCR...');
+      setScanProgress(30);
       const result = await extractSignaturesFromImage(imageData);
-      
-      console.log('Gemini OCR result:', result);
-      
+      setScanProgress(90);
+
+      console.log('OCR result:', result);
+
       const signatures: ScannedSignature[] = result.signatures.map(sig => ({
         ...sig,
         isValidating: false,
@@ -31,7 +34,7 @@ export function useOCRScanner() {
 
       setScannedSignatures(signatures);
       setRawText(result.rawText);
-      
+      setScanProgress(100);
     } catch (err) {
       console.error('OCR Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to scan document');
@@ -44,10 +47,12 @@ export function useOCRScanner() {
     setScannedSignatures([]);
     setRawText('');
     setError(null);
+    setScanProgress(0);
   }, []);
 
   return {
     isScanning,
+    scanProgress,
     scannedSignatures,
     rawText,
     error,
