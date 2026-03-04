@@ -5,7 +5,6 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { 
   Camera, 
-  Upload, 
   FileCheck, 
   ArrowLeft,
   Loader2,
@@ -18,16 +17,16 @@ import { Link } from 'react-router-dom';
 import { useOCRScanner } from '@/hooks/useOCRScanner';
 
 const CirculatorDashboard = () => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
   
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
   
   const { 
     isScanning, 
+    scanProgress,
     scannedSignatures,
     rawText,
     error, 
@@ -35,59 +34,57 @@ const CirculatorDashboard = () => {
     clearResults 
   } = useOCRScanner();
 
-  const startCamera = useCallback(async () => {
+  // CRITICAL: getUserMedia called directly in click handler for browser permission
+  const handleStartCamera = useCallback(async () => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: 1280, height: 720 }
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
       });
+      streamRef.current = mediaStream;
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
+        await videoRef.current.play();
       }
-      setStream(mediaStream);
       setIsCameraActive(true);
     } catch (err) {
       console.error('Camera access error:', err);
-      alert('Unable to access camera. Please check permissions.');
+      if (err instanceof Error && err.name === 'NotAllowedError') {
+        alert('Camera access denied. Please check browser permissions.');
+      } else {
+        alert('Could not start camera. Please try again.');
+      }
     }
   }, []);
 
   const stopCamera = useCallback(() => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
     setIsCameraActive(false);
-  }, [stream]);
+  }, []);
 
   const captureImage = useCallback(() => {
-    if (videoRef.current && canvasRef.current) {
-      const canvas = canvasRef.current;
-      const video = videoRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0);
-        const imageData = canvas.toDataURL('image/jpeg', 0.9);
-        setCapturedImage(imageData);
-        stopCamera();
-        scanDocument(imageData);
-      }
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+
+    if (ctx) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = canvas.toDataURL('image/jpeg', 0.9);
+      setCapturedImage(imageData);
+      stopCamera();
+      scanDocument(imageData);
     }
   }, [stopCamera, scanDocument]);
-
-  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const imageData = e.target?.result as string;
-        setCapturedImage(imageData);
-        scanDocument(imageData);
-      };
-      reader.readAsDataURL(file);
-    }
-  }, [scanDocument]);
 
   const resetScan = useCallback(() => {
     setCapturedImage(null);
@@ -111,20 +108,20 @@ const CirculatorDashboard = () => {
             </div>
           </div>
           <Badge variant="outline" className="text-accent border-accent">
-            Mobile
+            Camera Only
           </Badge>
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-6 max-w-2xl">
-        {/* Camera/Upload Section */}
+        {/* Camera Section */}
         {!capturedImage && !isScanning && scannedSignatures.length === 0 && (
           <div className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Scan Petition Sheet</CardTitle>
                 <CardDescription>
-                  Use your camera to capture a petition sheet or upload an image file
+                  Use your camera to capture a petition sheet for text detection
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -135,11 +132,11 @@ const CirculatorDashboard = () => {
                         ref={videoRef} 
                         autoPlay 
                         playsInline 
+                        muted
                         className="w-full h-full object-cover"
                       />
                       <div className="absolute inset-0 pointer-events-none">
                         <div className="absolute inset-4 border-2 border-dashed border-white/50 rounded-lg" />
-                        <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-accent/50 animate-scan-line" />
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -153,40 +150,14 @@ const CirculatorDashboard = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="grid gap-4">
-                    <Button 
-                      size="lg" 
-                      className="h-24 gap-3"
-                      onClick={startCamera}
-                    >
-                      <Camera className="w-6 h-6" />
-                      Open Camera
-                    </Button>
-                    <div className="relative">
-                      <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t" />
-                      </div>
-                      <div className="relative flex justify-center text-xs uppercase">
-                        <span className="bg-card px-2 text-muted-foreground">or</span>
-                      </div>
-                    </div>
-                    <Button 
-                      variant="outline" 
-                      size="lg" 
-                      className="h-16 gap-2"
-                      onClick={() => fileInputRef.current?.click()}
-                    >
-                      <Upload className="w-5 h-5" />
-                      Upload Image
-                    </Button>
-                    <input 
-                      ref={fileInputRef}
-                      type="file" 
-                      accept="image/*" 
-                      className="hidden"
-                      onChange={handleFileUpload}
-                    />
-                  </div>
+                  <Button 
+                    size="lg" 
+                    className="w-full h-24 gap-3"
+                    onClick={handleStartCamera}
+                  >
+                    <Camera className="w-6 h-6" />
+                    Open Camera
+                  </Button>
                 )}
               </CardContent>
             </Card>
@@ -199,7 +170,7 @@ const CirculatorDashboard = () => {
                 <p>1. Position the petition sheet within the frame</p>
                 <p>2. Ensure good lighting and a flat surface</p>
                 <p>3. Capture when all signatures are visible</p>
-                <p>4. Wait for automatic validation</p>
+                <p>4. Wait for automatic text detection</p>
               </CardContent>
             </Card>
           </div>
@@ -212,9 +183,9 @@ const CirculatorDashboard = () => {
               <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin text-accent" />
               <h3 className="text-lg font-semibold mb-2">Processing Document</h3>
               <p className="text-muted-foreground mb-4">
-                Extracting and validating signatures...
+                Running local text detection...
               </p>
-              <Progress value={33} className="max-w-xs mx-auto" />
+              <Progress value={scanProgress} className="max-w-xs mx-auto" />
             </CardContent>
           </Card>
         )}
@@ -222,7 +193,6 @@ const CirculatorDashboard = () => {
         {/* Results Section */}
         {scannedSignatures.length > 0 && !isScanning && (
           <div className="space-y-6">
-            {/* Summary Card */}
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -233,7 +203,7 @@ const CirculatorDashboard = () => {
                   </Button>
                 </div>
                 <CardDescription>
-                  {scannedSignatures.length} signature(s) detected by Gemini OCR
+                  {scannedSignatures.length} signature(s) detected via local OCR
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -244,23 +214,17 @@ const CirculatorDashboard = () => {
               </CardContent>
             </Card>
 
-            {/* Captured Image Preview */}
             {capturedImage && (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-lg">Scanned Document</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <img 
-                    src={capturedImage} 
-                    alt="Captured petition" 
-                    className="w-full rounded-lg border"
-                  />
+                  <img src={capturedImage} alt="Captured petition" className="w-full rounded-lg border" />
                 </CardContent>
               </Card>
             )}
 
-            {/* Raw Text Output */}
             {rawText && (
               <Card>
                 <CardHeader>
@@ -274,7 +238,6 @@ const CirculatorDashboard = () => {
               </Card>
             )}
 
-            {/* Individual Signature Details */}
             <div className="space-y-3">
               <h3 className="font-semibold text-lg">Signature Details</h3>
               {scannedSignatures.map((sig, index) => (
@@ -287,9 +250,7 @@ const CirculatorDashboard = () => {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="font-semibold text-lg">{sig.name}</span>
-                          <Badge variant="outline" className="text-xs">
-                            #{index + 1}
-                          </Badge>
+                          <Badge variant="outline" className="text-xs">#{index + 1}</Badge>
                         </div>
                         <div className="flex items-start gap-2 text-sm text-muted-foreground">
                           <MapPin className="w-4 h-4 mt-0.5 shrink-0" />
@@ -298,7 +259,7 @@ const CirculatorDashboard = () => {
                             <p>{sig.city}, {sig.zip}</p>
                           </div>
                         </div>
-                        <div className="mt-3 text-xs text-muted-foreground">
+                        <div className="mt-3">
                           <Badge variant="secondary" className="text-xs">
                             OCR Confidence: {Math.round(sig.confidence * 100)}%
                           </Badge>
@@ -310,7 +271,6 @@ const CirculatorDashboard = () => {
               ))}
             </div>
 
-            {/* Placeholder for future validation */}
             <Card className="border-dashed border-2 bg-muted/30">
               <CardContent className="py-6 text-center text-muted-foreground">
                 <p className="text-sm">🔒 Identity validation will be enabled later</p>
@@ -332,7 +292,6 @@ const CirculatorDashboard = () => {
           </Card>
         )}
 
-        {/* Hidden canvas for image capture */}
         <canvas ref={canvasRef} className="hidden" />
       </main>
     </div>
