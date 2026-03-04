@@ -101,11 +101,36 @@ const CirculatorDashboard = () => {
     setIsCameraActive(false);
   }, []);
 
+  useEffect(() => {
+    if (!isCameraActive || !videoRef.current || !streamRef.current) return;
+
+    const videoElement = videoRef.current;
+    videoElement.srcObject = streamRef.current;
+    videoElement.play().catch((playError) => {
+      console.error('Video preview error:', playError);
+    });
+  }, [isCameraActive]);
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, []);
+
   const captureImage = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return;
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
+
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      alert('Camera preview is not ready yet. Please wait a moment and try again.');
+      return;
+    }
+
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
